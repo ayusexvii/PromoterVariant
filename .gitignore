@@ -1,0 +1,36 @@
+# Large data files
+*.bw
+*.bigWig
+*.gz
+*.bed
+*.pkl
+*.csv
+*.png
+*.jpg
+*.tar
+
+# Processed data
+**/processed/
+**/raw/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Streamlit
+.streamlit/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.backup
+*.old
+*.tmp
+
+# Large files
+*.pkl
+*.joblib

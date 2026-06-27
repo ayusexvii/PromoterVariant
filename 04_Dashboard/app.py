@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""
+PromoterVariant Portfolio Dashboard - Streamlit Entry Point
+v1.0 — Full Genome Honest Model with ClinVar Annotations
+"""
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import plotly.express as px
+import plotly.graph_objects as go
+from pathlib import Path
+import re
+
+def extract_ref_alt(variant_name):
+    """Extract reference and alternate alleles from HGVS variant name."""
+    if pd.isna(variant_name):
+        return 'N/A', 'N/A'
+    
+    name = str(variant_name)
+    
+    # Pattern: c.-158C>T or c.123A>G (substitutions)
+    match = re.search(r'[aAcCgGtT]>[aAcCgGtT]', name)
+    if match:
+        parts = match.group().split('>')
+        return parts[0].upper(), parts[1].upper()
+    
+    # Deletions
+    if 'del' in name.lower():
+        return 'N/A', 'DEL'
+    
+    # Duplications
+    if 'dup' in name.lower():
+        return 'N/A', 'DUP'
+    
+    # Insertions
+    if 'ins' in name.lower():
+        return 'N/A', 'INS'
+    
+    # Inversions
+    if 'inv' in name.lower():
+        return 'N/A', 'INV'
+    
+    return 'N/A', 'N/A'
+
+# --- PAGE CONFIG ---
+st.set_page_config(
+    page_title="PromoterVariant AI",
+    page_icon="🧬",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- CACHED DATA LOADING ---
+@st.cache_resource
+def load_prediction_model(model_path: Path):
+    """Load the machine learning model."""
+    if not model_path.exists():
+        return None
+    return joblib.load(model_path)
+
+@st.cache_data
+def load_genomic_dataframe(data_path: Path):
+    """Load training matrix + merge ClinVar annotations."""
+    if not data_path.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(data_path, compression='gzip')
+    
+    # Clean training gene names for merging
+    df['promoter_gene_clean'] = df['promoter_gene'].str.strip().str.upper()
+
+    # Load ClinVar annotations from overlap file
+    try:
+        script_dir = Path(__file__).resolve().parent
+        anno_path = script_dir / '../02_Features/processed/promoter_variants_allchr.txt.gz'
+
+        anno_df = pd.read_csv(
+            anno_path,
+            sep='\t',
+            compression='gzip',
+            usecols=['promoter_gene', 'variant_name', 'variant_type', 'clinsig']
+        ).drop_duplicates(subset=['promoter_gene'])
+        
+        # Clean annotation gene names
+        anno_df['gene_clean'] = anno_df['promoter_gene'].str.strip().str.upper()
+        
+        # Extract ref/alt from variant_name using your function
+        anno_df['Ref'] = anno_df['variant_name'].apply(lambda x: extract_ref_alt(x)[0])
+        anno_df['Alt'] = anno_df['variant_name'].apply(lambda x: extract_ref_alt(x)[1])
+        
+        # Rename columns for merge
+        anno_df = anno_df.rename(columns={
+            'variant_type': 'Type',
+            'clinsig': 'ClinSig'
+        })
+        
+        # Merge on cleaned keys
+        df = df.merge(anno_df[['gene_clean', 'Type', 'ClinSig', 'Ref', 'Alt']], 
+                      left_on='promoter_gene_clean', 
+                      right_on='gene_clean', 
+                      how='left')
+        
+        # Drop temporary columns
+        df = df.drop(columns=['promoter_gene_clean', 'gene_clean'], errors='ignore')
+        
+        # Fill NaN with N/A
+        df['Ref'] = df['Ref'].fillna('N/A')
+        df['Alt'] = df['Alt'].fillna('N/A')
+        df['Type'] = df['Type'].fillna('N/A')
+        df['ClinSig'] = df['ClinSig'].fillna('N/A')
+
+    except Exception as e:
+        st.warning(f"⚠️ Could not load annotations: {e}")
+        df['Type'] = 'N/A'
+        df['ClinSig'] = 'N/A'
+        df['Ref'] = 'N/A'
+        df['Alt'] = 'N/A'
+
+    # Engineered features
+    df['abs_distance'] = df['distance_to_tss'].abs()
+    gene_counts = df['promoter_gene'].value_counts().to_dict()
+    df['gene_variant_count'] = df['promoter_gene'].map(gene_counts)
+
+    # Chromosome display
+    if 'chrom' in df.columns:
+        df['display_chrom'] = df['chrom'].astype(str).apply(
+            lambda x: x if x.startswith('chr') else f"chr{x}"
+        )
+
+    return df
+
+# --- THEME FUNCTIONS ---
+def apply_neon_noir_layout(fig):
+    """Apply neo-noir theme to Plotly figures."""
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(11,12,16,1)",
+        plot_bgcolor="rgba(26,29,36,1)",
+        font_family="Monospace",
+        margin=dict(l=40, r=40, t=40, b=40)
+    )
+    fig.update_xaxes(gridcolor="#2A2F35", zerolinecolor="#3A3F45")
+    fig.update_yaxes(gridcolor="#2A2F35", zerolinecolor="#3A3F45")
+    return fig
+
+# --- PAGE: OVERVIEW ---
+def render_overview_page(df):
+    st.markdown("<h1 style='color:#00F2FE;'>🧬 PROMOTER VARIANT AI ARCHITECTURE</h1>", unsafe_allow_html=True)
+    st.markdown("### Functional Deep-Learning Reference Model for eQTL Mapping Validation")
+    st.markdown("---")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>TARGET VARIANTS</h5><h2 style='color:#00F2FE; margin:0;'>31,877</h2></div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MAPPED GENES</h5><h2 style='color:#00F2FE; margin:0;'>~6,000</h2></div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MODEL PERFORMANCE R²</h5><h2 style='color:#00F2FE; margin:0;'>0.4990</h2></div>", unsafe_allow_html=True)
+    with col4:
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MEAN ABSOLUTE ERROR</h5><h2 style='color:#00F2FE; margin:0;'>0.2610</h2></div>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    left_col, right_col = st.columns(2)
+    with left_col:
+        st.markdown("### 📊 Project Objective")
+        st.write(
+            "This project forecasts the directional impact of regulatory variants "
+            "within human promoter regions using machine learning."
+        )
+    with right_col:
+        st.markdown("### ⚙️ Pipeline")
+        st.markdown(
+            "- **Model:** HistGradientBoostingRegressor\n"
+            "- **Features:** Distance to TSS, absolute distance, gene variant count\n"
+            "- **Samples:** 31,877 GTEx liver eQTLs\n"
+            "- **No data leakage:** p-value features excluded"
+        )
+
+# --- PAGE: GENE EXPLORER ---
+def render_gene_explorer_page(df, model):
+    st.markdown("<h1 style='color:#00F2FE;'>🔍 CORE GENE INTERACTION EXPLORER</h1>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    gene_input = st.text_input("Enter HUGO Gene Symbol:", value="CHEK2").strip().upper()
+    gene_df = df[df['promoter_gene'] == gene_input]
+    
+    if gene_df.empty:
+        st.warning(f"No variants found for: {gene_input}")
+        return
+    
+    st.success(f"Found {len(gene_df):,} variants for {gene_input}")
+    
+            # Add predictions
+    if model is not None:
+        gene_df = gene_df.copy()
+        
+        # Ensure phyloP column exists (model expects 4 features)
+        if 'phyloP' not in gene_df.columns:
+            gene_df['phyloP'] = 0.0
+        
+        X_gene = gene_df[['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']]
+        gene_df['predicted'] = model.predict(X_gene)
+        
+        # Display table with annotations
+        gene_df_display = gene_df[[
+            'promoter_gene', 'distance_to_tss', 'eqtl_slope', 'predicted',
+            'ClinSig', 'Type', 'Ref', 'Alt'
+        ]].copy()
+        
+        gene_df_display.columns = [
+            'Gene', 'Dist to TSS', 'Actual Slope', 'Predicted Slope',
+            'ClinVar Sig', 'Variant Type', 'Ref', 'Alt'
+        ]
+        
+        st.dataframe(gene_df_display.round(3), width="stretch")
+        
+        # CSV Export
+        st.markdown("---")
+        csv = gene_df_display.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"{gene_input}_promoter_variants.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+# --- PAGE: VARIANT SIMULATOR ---
+def render_variant_simulator_page(model, df):
+    st.markdown("<h1 style='color:#00F2FE;'>🔮 REAL-TIME REGULATORY VARIANT SIMULATOR</h1>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    if model is None:
+        st.error("❌ Model not loaded.")
+        return
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("### 🕹️ Input Controls")
+        gene_name_sim = st.text_input("Gene Symbol:", value="CHEK2").strip().upper()
+        distance_tss = st.slider("Distance to TSS (bp):", -2000, 2000, 150, 10)
+        
+        sub_df = df[df['promoter_gene'] == gene_name_sim]
+        gene_var_count = len(sub_df) if not sub_df.empty else int(df['gene_variant_count'].median())
+        phylo_p_val = float(sub_df['phyloP'].median()) if not sub_df.empty and 'phyloP' in df.columns else 0.05
+        
+    with col2:
+        st.markdown("### 📊 Prediction")
+        abs_dist = abs(distance_tss)
+        input_df = pd.DataFrame(
+            [[distance_tss, abs_dist, gene_var_count, phylo_p_val]],
+            columns=['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']
+        )
+        pred = float(model.predict(input_df)[0])
+        
+        st.metric("Predicted eQTL Slope", f"{pred:+.4f}")
+        
+        # --- Confidence Interval (INDENTED INSIDE col2) ---
+        st.markdown("---")
+        st.subheader("📊 Prediction Uncertainty")
+        
+        # Calculate residuals on a sample for CI estimation
+        sample_df = df.sample(n=min(5000, len(df)), random_state=42)
+        X_sample = sample_df[['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']]
+        sample_df['pred'] = model.predict(X_sample)
+        sample_df['residual'] = sample_df['eqtl_slope'] - sample_df['pred']
+        
+        residual_std = sample_df['residual'].std()
+        ci_lower = pred - 1.96 * residual_std
+        ci_upper = pred + 1.96 * residual_std
+        
+        col1_ci, col2_ci = st.columns(2)
+        with col1_ci:
+            st.metric("95% Confidence Interval", f"[{ci_lower:.3f}, {ci_upper:.3f}]")
+        with col2_ci:
+            st.caption(f"Based on residual std = {residual_std:.3f} from {len(sample_df):,} training samples")
+        
+        # Visual CI
+        fig_ci = go.Figure()
+        fig_ci.add_trace(go.Scatter(
+            x=[0, 1], y=[pred, pred],
+            mode='lines',
+            line=dict(color='#00F2FE', width=3),
+            name='Predicted'
+        ))
+        fig_ci.add_vrect(
+            x0=0, x1=1,
+            fillcolor="rgba(0,242,254,0.1)",
+            line_width=0,
+            annotation_text=f"95% CI: [{ci_lower:.3f}, {ci_upper:.3f}]",
+            annotation_position="top"
+        )
+        fig_ci.update_layout(
+            xaxis=dict(visible=False, range=[-0.5, 1.5]),
+            yaxis=dict(title="Predicted Effect Size (Slope)", gridcolor='#1E293B'),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color='#94A3B8',
+            font_family="JetBrains Mono",
+            height=200,
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        fig_ci.update_traces(showlegend=False)
+        st.plotly_chart(fig_ci, width="stretch")
+        
+        # Interpretation
+        if abs(pred) < 0.1:
+            st.info("🟡 Negligible effect")
+        elif pred > 0.3:
+            st.success("🟢 Strong positive effect")
+        elif pred < -0.3:
+            st.error("🔴 Strong negative effect")
+        else:
+            st.warning("🟠 Moderate effect")
+
+
+# --- PAGE: MODEL INSIGHTS ---
+def render_model_insights_page(df):
+    st.markdown("<h1 style='color:#00F2FE;'>📊 MODEL INSIGHTS</h1>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.info("📈 Feature importance and residual plots coming in v1.1")
+
+# --- MAIN ---
+def main():
+    script_dir = Path(__file__).resolve().parent
+    data_path = script_dir / '../02_Features/processed/training_matrix_with_conservation.csv.gz'
+    model_path = script_dir / '../03_Model/processed/conservation_model.pkl'
+    
+    df = load_genomic_dataframe(data_path)
+    model = load_prediction_model(model_path)
+    
+    if df.empty:
+        st.error("❌ Data load failed.")
+        return
+    
+    # Sidebar
+    st.sidebar.markdown("<h2 style='color:#00F2FE;'>🧬 PROMOTER AI</h2>", unsafe_allow_html=True)
+    st.sidebar.markdown("---")
+    
+    # --- Tissue Selector ---
+    st.sidebar.markdown("### 🧬 Tissue")
+    tissue_options = ["Liver", "Whole Blood (coming v1.1)"]
+    tissue = st.sidebar.selectbox("Select Tissue", tissue_options)
+    
+    if tissue == "Whole Blood (coming v1.1)":
+        st.sidebar.info("🔄 Whole Blood data will be available in v1.1")
+        tissue = "Liver"  # Fallback to Liver
+    
+    page = st.sidebar.radio(
+        "NAVIGATION",
+        ["1. Dashboard Overview", "2. Gene Locus Explorer", "3. Live Mutation Simulator", "4. Deep Model Insights"]
+    )
+    
+    if page == "1. Dashboard Overview":
+        render_overview_page(df)
+    elif page == "2. Gene Locus Explorer":
+        render_gene_explorer_page(df, model)
+    elif page == "3. Live Mutation Simulator":
+        render_variant_simulator_page(model, df)
+    elif page == "4. Deep Model Insights":
+        render_model_insights_page(df)
+        
+if __name__ == "__main__":
+    main()

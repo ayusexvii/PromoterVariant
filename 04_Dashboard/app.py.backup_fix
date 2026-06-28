@@ -10,38 +10,6 @@ import joblib
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
-import re
-
-def extract_ref_alt(variant_name):
-    """Extract reference and alternate alleles from HGVS variant name."""
-    if pd.isna(variant_name):
-        return 'N/A', 'N/A'
-    
-    name = str(variant_name)
-    
-    # Pattern: c.-158C>T or c.123A>G (substitutions)
-    match = re.search(r'[aAcCgGtT]>[aAcCgGtT]', name)
-    if match:
-        parts = match.group().split('>')
-        return parts[0].upper(), parts[1].upper()
-    
-    # Deletions
-    if 'del' in name.lower():
-        return 'N/A', 'DEL'
-    
-    # Duplications
-    if 'dup' in name.lower():
-        return 'N/A', 'DUP'
-    
-    # Insertions
-    if 'ins' in name.lower():
-        return 'N/A', 'INS'
-    
-    # Inversions
-    if 'inv' in name.lower():
-        return 'N/A', 'INV'
-    
-    return 'N/A', 'N/A'
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -64,70 +32,43 @@ def load_genomic_dataframe(data_path: Path):
     """Load training matrix + merge ClinVar annotations."""
     if not data_path.exists():
         return pd.DataFrame()
-
+    
     df = pd.read_csv(data_path, compression='gzip')
     
-    # Clean training gene names for merging
-    df['promoter_gene_clean'] = df['promoter_gene'].str.strip().str.upper()
-
     # Load ClinVar annotations from overlap file
     try:
         script_dir = Path(__file__).resolve().parent
         anno_path = script_dir / '../02_Features/processed/promoter_variants_allchr.txt.gz'
-
+        
         anno_df = pd.read_csv(
             anno_path,
             sep='\t',
             compression='gzip',
-            usecols=['promoter_gene', 'variant_name', 'variant_type', 'clinsig']
+            usecols=['promoter_gene', 'variant_type', 'clinsig', 'ref', 'alt']
         ).drop_duplicates(subset=['promoter_gene'])
         
-        # Clean annotation gene names
-        anno_df['gene_clean'] = anno_df['promoter_gene'].str.strip().str.upper()
+        anno_df.columns = ['gene', 'Type', 'ClinSig', 'Ref', 'Alt']
+        df = df.merge(anno_df, left_on='promoter_gene', right_on='gene', how='left')
+        df = df.drop(columns=['gene'], errors='ignore')
         
-        # Extract ref/alt from variant_name using your function
-        anno_df['Ref'] = anno_df['variant_name'].apply(lambda x: extract_ref_alt(x)[0])
-        anno_df['Alt'] = anno_df['variant_name'].apply(lambda x: extract_ref_alt(x)[1])
-        
-        # Rename columns for merge
-        anno_df = anno_df.rename(columns={
-            'variant_type': 'Type',
-            'clinsig': 'ClinSig'
-        })
-        
-        # Merge on cleaned keys
-        df = df.merge(anno_df[['gene_clean', 'Type', 'ClinSig', 'Ref', 'Alt']], 
-                      left_on='promoter_gene_clean', 
-                      right_on='gene_clean', 
-                      how='left')
-        
-        # Drop temporary columns
-        df = df.drop(columns=['promoter_gene_clean', 'gene_clean'], errors='ignore')
-        
-        # Fill NaN with N/A
-        df['Ref'] = df['Ref'].fillna('N/A')
-        df['Alt'] = df['Alt'].fillna('N/A')
-        df['Type'] = df['Type'].fillna('N/A')
-        df['ClinSig'] = df['ClinSig'].fillna('N/A')
-
     except Exception as e:
         st.warning(f"⚠️ Could not load annotations: {e}")
         df['Type'] = 'N/A'
         df['ClinSig'] = 'N/A'
-        df['Ref'] = 'N/A'
-        df['Alt'] = 'N/A'
-
+        df['Ref'] = df.get('ref', 'N/A')
+        df['Alt'] = df.get('alt', 'N/A')
+    
     # Engineered features
     df['abs_distance'] = df['distance_to_tss'].abs()
     gene_counts = df['promoter_gene'].value_counts().to_dict()
     df['gene_variant_count'] = df['promoter_gene'].map(gene_counts)
-
+    
     # Chromosome display
     if 'chrom' in df.columns:
         df['display_chrom'] = df['chrom'].astype(str).apply(
             lambda x: x if x.startswith('chr') else f"chr{x}"
         )
-
+    
     return df
 
 # --- THEME FUNCTIONS ---
@@ -191,15 +132,10 @@ def render_gene_explorer_page(df, model):
     
     st.success(f"Found {len(gene_df):,} variants for {gene_input}")
     
-            # Add predictions
+    # Add predictions
     if model is not None:
         gene_df = gene_df.copy()
-        
-        # Ensure phyloP column exists (model expects 4 features)
-        if 'phyloP' not in gene_df.columns:
-            gene_df['phyloP'] = 0.0
-        
-        X_gene = gene_df[['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']]
+        X_gene = gene_df[['distance_to_tss', 'abs_distance', 'gene_variant_count']]
         gene_df['predicted'] = model.predict(X_gene)
         
         # Display table with annotations
@@ -215,27 +151,16 @@ def render_gene_explorer_page(df, model):
         
         st.dataframe(gene_df_display.round(3), width="stretch")
         
-
-                # Debug: Check if data exists
-        st.write(f"Debug: {len(gene_df_display)} rows, columns: {list(gene_df_display.columns)}")
-
         # CSV Export
         st.markdown("---")
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            try:
-                csv_data = gene_df_display.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download CSV",
-                    data=csv_data,
-                    file_name=f"{gene_input}_promoter_variants.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.error(f"⚠️ CSV export error: {e}")
-        with col2:
-            st.caption(f"Download data for {len(gene_df)} variants as CSV")
+        csv = gene_df_display.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"{gene_input}_promoter_variants.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
 # --- PAGE: VARIANT SIMULATOR ---
 def render_variant_simulator_page(model, df):
@@ -267,54 +192,6 @@ def render_variant_simulator_page(model, df):
         
         st.metric("Predicted eQTL Slope", f"{pred:+.4f}")
         
-        # --- Confidence Interval (INDENTED INSIDE col2) ---
-        st.markdown("---")
-        st.subheader("📊 Prediction Uncertainty")
-        
-        # Calculate residuals on a sample for CI estimation
-        sample_df = df.sample(n=min(5000, len(df)), random_state=42)
-        X_sample = sample_df[['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']]
-        sample_df['pred'] = model.predict(X_sample)
-        sample_df['residual'] = sample_df['eqtl_slope'] - sample_df['pred']
-        
-        residual_std = sample_df['residual'].std()
-        ci_lower = pred - 1.96 * residual_std
-        ci_upper = pred + 1.96 * residual_std
-        
-        col1_ci, col2_ci = st.columns(2)
-        with col1_ci:
-            st.metric("95% Confidence Interval", f"[{ci_lower:.3f}, {ci_upper:.3f}]")
-        with col2_ci:
-            st.caption(f"Based on residual std = {residual_std:.3f} from {len(sample_df):,} training samples")
-        
-        # Visual CI
-        fig_ci = go.Figure()
-        fig_ci.add_trace(go.Scatter(
-            x=[0, 1], y=[pred, pred],
-            mode='lines',
-            line=dict(color='#00F2FE', width=3),
-            name='Predicted'
-        ))
-        fig_ci.add_vrect(
-            x0=0, x1=1,
-            fillcolor="rgba(0,242,254,0.1)",
-            line_width=0,
-            annotation_text=f"95% CI: [{ci_lower:.3f}, {ci_upper:.3f}]",
-            annotation_position="top"
-        )
-        fig_ci.update_layout(
-            xaxis=dict(visible=False, range=[-0.5, 1.5]),
-            yaxis=dict(title="Predicted Effect Size (Slope)", gridcolor='#1E293B'),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font_color='#94A3B8',
-            font_family="JetBrains Mono",
-            height=200,
-            margin=dict(l=40, r=40, t=40, b=40)
-        )
-        fig_ci.update_traces(showlegend=False)
-        st.plotly_chart(fig_ci, width="stretch")
-        
         # Interpretation
         if abs(pred) < 0.1:
             st.info("🟡 Negligible effect")
@@ -324,7 +201,6 @@ def render_variant_simulator_page(model, df):
             st.error("🔴 Strong negative effect")
         else:
             st.warning("🟠 Moderate effect")
-
 
 # --- PAGE: MODEL INSIGHTS ---
 def render_model_insights_page(df):
@@ -349,15 +225,6 @@ def main():
     st.sidebar.markdown("<h2 style='color:#00F2FE;'>🧬 PROMOTER AI</h2>", unsafe_allow_html=True)
     st.sidebar.markdown("---")
     
-    # --- Tissue Selector ---
-    st.sidebar.markdown("### 🧬 Tissue")
-    tissue_options = ["Liver", "Whole Blood (coming v1.1)"]
-    tissue = st.sidebar.selectbox("Select Tissue", tissue_options)
-    
-    if tissue == "Whole Blood (coming v1.1)":
-        st.sidebar.info("🔄 Whole Blood data will be available in v1.1")
-        tissue = "Liver"  # Fallback to Liver
-    
     page = st.sidebar.radio(
         "NAVIGATION",
         ["1. Dashboard Overview", "2. Gene Locus Explorer", "3. Live Mutation Simulator", "4. Deep Model Insights"]
@@ -371,6 +238,6 @@ def main():
         render_variant_simulator_page(model, df)
     elif page == "4. Deep Model Insights":
         render_model_insights_page(df)
-        
+
 if __name__ == "__main__":
     main()

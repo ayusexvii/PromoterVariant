@@ -1,0 +1,20 @@
+name: promoter
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - pandas
+    - numpy
+    - scikit-learn
+    - streamlit
+    - plotly
+    - joblib
+    - pyranges
+    - pybigwig
+    - matplotlib
+    - shap
+    - jupyter

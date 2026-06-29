@@ -191,142 +191,51 @@ def render_gene_explorer_page(df, model):
     
     st.success(f"Found {len(gene_df):,} variants for {gene_input}")
     
+            # Add predictions
     if model is not None:
         gene_df = gene_df.copy()
         
-        # Ensure phyloP exists
+        # Ensure phyloP column exists (model expects 4 features)
         if 'phyloP' not in gene_df.columns:
             gene_df['phyloP'] = 0.0
         
         X_gene = gene_df[['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']]
         gene_df['predicted'] = model.predict(X_gene)
         
-                # --- CLINICAL TIERING (load pre-computed tiers) ---
-        st.subheader("🧬 Clinical Stratification")
-        
-        # Load tier data only for the specific gene
-        tier_path = Path(__file__).resolve().parent / '../02_Features/processed/clinical_tiers_allchr.csv.gz'
-        if tier_path.exists():
-            # Load only the columns we need
-            tier_df = pd.read_csv(
-                tier_path, 
-                compression='gzip',
-                usecols=['chrom', 'pos', 'tier', 'action', 'promoter_gene']
-            )
-            # Filter to only the gene we're looking at
-            tier_df = tier_df[tier_df['promoter_gene'] == gene_input]
-            
-            # --- FIX: Deduplicate before merging ---
-            # Keep only the first occurrence of each variant
-            tier_df = tier_df.drop_duplicates(subset=['chrom', 'pos'], keep='first')
-            
-            # Create merge keys
-            gene_df['merge_key'] = gene_df['chrom'].astype(str) + '_' + gene_df['pos'].astype(str)
-            tier_df['merge_key'] = tier_df['chrom'].astype(str) + '_' + tier_df['pos'].astype(str)
-            
-            # Merge using the key
-            gene_df = gene_df.merge(
-                tier_df[['merge_key', 'tier', 'action']], 
-                on='merge_key', 
-                how='left'
-            )
-            gene_df = gene_df.drop(columns=['merge_key'], errors='ignore')
-            
-        else:
-            # Fallback: compute simple tiers
-            def assign_tier_simple(row):
-                slope = abs(row['predicted'])
-                if slope > 0.50:
-                    return ('Tier 1: High-Impact', 'Consider functional validation.')
-                elif slope > 0.20:
-                    return ('Tier 2: Moderate Impact', 'Periodic re-evaluation recommended.')
-                else:
-                    return ('Tier 3: Regulatory Benign', 'Standard clinical follow-up.')
-            gene_df[['tier', 'action']] = gene_df.apply(assign_tier_simple, axis=1, result_type='expand')
-        
-        # Fill missing tiers
-        gene_df['tier'] = gene_df['tier'].fillna('Tier 3: Regulatory Benign')
-        gene_df['action'] = gene_df['action'].fillna('Standard clinical follow-up.')
-        
-        # Tier counts
-        tier_counts = gene_df['tier'].value_counts()
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("🔴 Tier 1 (High Impact)", len(gene_df[gene_df['tier'].str.contains('Tier 1')]))
-        col2.metric("🟡 Tier 2 (Moderate)", len(gene_df[gene_df['tier'].str.contains('Tier 2')]))
-        col3.metric("🟢 Tier 3 (Benign)", len(gene_df[gene_df['tier'].str.contains('Tier 3')]))
-        
-        # --- Tier Summary Table (limit to first 15) ---
-        st.markdown("#### Variant Summary")
-        
-        summary_lines = ["| Badge | Tier | Gene | Predicted Slope | Action |"]
-        summary_lines.append("|-------|------|------|-----------------|--------|")
-        
-        for _, row in gene_df.head(15).iterrows():
-            tier = row.get('tier', 'Tier 3: Regulatory Benign')
-            if "Tier 1" in tier:
-                badge = "🔴"
-            elif "Tier 2" in tier:
-                badge = "🟡"
-            else:
-                badge = "🟢"
-            slope = row.get('predicted', 0.0)
-            action = row.get('action', 'Standard clinical follow-up.')
-            summary_lines.append(f"| {badge} | {tier} | {row['promoter_gene']} | {slope:.3f} | {action[:40]}... |")
-        
-        st.markdown("\n".join(summary_lines))
-        
-        # --- Tier Distribution Pie Chart (only if data exists) ---
-        st.markdown("#### Tier Distribution")
-        if len(tier_counts) > 0 and tier_counts.sum() > 0:
-            fig = px.pie(
-                names=tier_counts.index,
-                values=tier_counts.values,
-                hole=0.4,
-                color_discrete_map={
-                    'Tier 1: Actionable High-Impact': '#FF3366',
-                    'Tier 1: High-Impact': '#FF6633',
-                    'Tier 2: Moderate Impact': '#00F2FE',
-                    'Tier 3: Regulatory Benign': '#00FF87'
-                }
-            )
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font_color='#94A3B8',
-                font_family="JetBrains Mono",
-                title_font_color='#E2E8F0',
-                margin=dict(l=20, r=20, t=40, b=20),
-                height=350
-            )
-            st.plotly_chart(fig, width="stretch")
-        else:
-            st.info("No tier data available for this gene.")
-        
-        # --- Display table with annotations ---
-        st.markdown("---")
+        # Display table with annotations
         gene_df_display = gene_df[[
             'promoter_gene', 'distance_to_tss', 'eqtl_slope', 'predicted',
-            'ClinSig', 'Type', 'Ref', 'Alt', 'tier'
+            'ClinSig', 'Type', 'Ref', 'Alt'
         ]].copy()
         
         gene_df_display.columns = [
             'Gene', 'Dist to TSS', 'Actual Slope', 'Predicted Slope',
-            'ClinVar Sig', 'Variant Type', 'Ref', 'Alt', 'Tier'
+            'ClinVar Sig', 'Variant Type', 'Ref', 'Alt'
         ]
         
         st.dataframe(gene_df_display.round(3), width="stretch")
         
+
+                # Debug: Check if data exists
+        st.write(f"Debug: {len(gene_df_display)} rows, columns: {list(gene_df_display.columns)}")
+
         # CSV Export
         st.markdown("---")
-        csv_data = gene_df_display.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv_data,
-            file_name=f"{gene_input}_promoter_variants.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            try:
+                csv_data = gene_df_display.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv_data,
+                    file_name=f"{gene_input}_promoter_variants.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"⚠️ CSV export error: {e}")
+        with col2:
+            st.caption(f"Download data for {len(gene_df)} variants as CSV")
 
 # --- PAGE: VARIANT SIMULATOR ---
 def render_variant_simulator_page(model, df):

@@ -1,27 +1,56 @@
 with open('app.py', 'r') as f:
     lines = f.readlines()
 
-# Find and fix the indentation issue
-fixed = []
-in_variant_sim = False
+# Find the line with "tissue_clean" to locate the block
+start_idx = None
 for i, line in enumerate(lines):
-    # Check if we're in the variant simulator section
-    if 'def render_variant_simulator_page' in line:
-        in_variant_sim = True
-    # Find the line with the problematic code
-    if 'input_vector = np.array' in line:
-        # Skip this line
-        continue
-    if 'predicted_slope = float(model.predict(input_vector)' in line:
-        # Skip this line
-        continue
-    if 'val_abs = abs(predicted_slope)' in line and in_variant_sim:
-        # This is the line with indentation error - fix it
-        fixed.append('        val_abs = abs(predicted_slope)\n')
-        continue
-    fixed.append(line)
+    if 'tissue_clean = tissue.split' in line:
+        start_idx = i
+        break
 
-with open('app.py', 'w') as f:
-    f.writelines(fixed)
+if start_idx is not None:
+    # We want to rewrite from start_idx to the next radio block end
+    # We'll set the indentation for the whole block to 4 spaces for the main block
+    # and 8 spaces for the nested lines.
+    # Let's just replace the entire section from tissue_clean to the closing parenthesis of radio.
+    # We'll manually rebuild that section.
+    
+    # Find the end of the radio block (the line with ')')
+    end_idx = None
+    for i in range(start_idx, len(lines)):
+        if ')' in lines[i] and 'st.sidebar.radio' not in lines[i]:
+            # This is likely the closing parenthesis
+            end_idx = i
+            break
+    
+    if end_idx is not None:
+        # Build new lines
+        new_lines = [
+            '    # --- Tissue Selector ---\n',
+            '    st.sidebar.markdown("### 🧬 Tissue")\n',
+            '    tissue_options = ["Liver", "Whole Blood (v2.6)", "Brain (v2.6)"]\n',
+            '    tissue = st.sidebar.selectbox("Select Tissue", tissue_options)\n',
+            '\n',
+            '    # Normalize tissue name\n',
+            '    tissue_clean = tissue.split(" (")[0] if "(" in tissue else tissue\n',
+            '    st.sidebar.caption(f"Current: {tissue_clean}")\n',
+            '\n',
+            '    page = st.sidebar.radio(\n',
+            '        "NAVIGATION",\n',
+            '        ["1. Dashboard Overview", "2. Gene Locus Explorer", "3. Live Mutation Simulator", "4. Deep Model Insights"]\n',
+            '    )\n'
+        ]
+        
+        # Replace the lines
+        lines[start_idx:end_idx+1] = new_lines
+        
+        # Write back
+        with open('app.py', 'w') as f:
+            f.writelines(lines)
+        
+        print("✅ Fixed indentation for the sidebar section")
+    else:
+        print("Could not find end of radio block")
+else:
+    print("Could not find tissue_clean line")
 
-print("✅ Fixed indentation error")

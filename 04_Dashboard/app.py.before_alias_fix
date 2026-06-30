@@ -123,22 +123,19 @@ def render_gene_explorer_page(df):
     st.markdown("<h1 style='color:#00F2FE;'>🔍 CORE GENE INTERACTION EXPLORER</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    # --- Gene Alias Mapping (NF2 is stored as ZNF239 in the dataset) ---
-    GENE_ALIASES = {
-        'NF2': 'ZNF239',
-        # Add more aliases here as needed
-    }
-    
     gene_input = st.text_input("Enter HUGO Gene Symbol:", value="CHEK2").strip().upper()
+    gene_df = df[df['promoter_gene'] == gene_input]
     
-    # Check if the gene has an alias
-    actual_gene = GENE_ALIASES.get(gene_input, gene_input)
-    
-    # Get validation status for display
-    val_df = load_validation_status()
+    if gene_df.empty:
+        st.warning(f"No variant records mapped within the dataset for gene target: {gene_input}")
+        return
+        
+    st.success(f"Discovered {len(gene_df):,} regulatory mutations interacting inside the {gene_input} promoter window corridor.")
     
     # --- Validation Status ---
     st.subheader("🧬 Gene Validation Status")
+    
+    val_df = load_validation_status()
     if gene_input in val_df['Gene'].values:
         row = val_df[val_df['Gene'] == gene_input].iloc[0]
         st.success(f"✅ **{gene_input}** is validated!")
@@ -146,21 +143,6 @@ def render_gene_explorer_page(df):
     else:
         st.info(f"ℹ️ **{gene_input}** not yet validated in the literature set")
         st.caption("Validated genes: CHEK2, NF2, TERT, HBB")
-    
-    # Query the dataframe with the actual gene name
-    gene_df = df[df['promoter_gene'] == actual_gene]
-    
-    if gene_df.empty:
-        # Check if it's a validated gene that has no data
-        if gene_input in val_df['Gene'].values:
-            st.warning(f"⚠️ **{gene_input}** is validated in the literature but currently has no variants in the training data.")
-            st.info(f"   This gene will be available in v2.6 when multi-tissue data is fully integrated.")
-            return
-        else:
-            st.warning(f"No variant records mapped within the dataset for gene target: {gene_input}")
-            return
-        
-    st.success(f"Discovered {len(gene_df):,} regulatory mutations interacting inside the {gene_input} promoter window corridor.")
     
     col1, col2 = st.columns([3, 2])
     with col1:

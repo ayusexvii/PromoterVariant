@@ -205,7 +205,7 @@ def render_gene_explorer_page(df, model):
         st.subheader("🧬 Clinical Stratification")
         
         # Load tier data only for the specific gene
-        tier_path = Path(__file__).resolve().parent / '../02_Features/processed/clinical_tiers_fixed.csv.gz'
+        tier_path = Path(__file__).resolve().parent / '../02_Features/processed/clinical_tiers_v202.csv.gz'
         if tier_path.exists():
             # Load only the columns we need
             tier_df = pd.read_csv(

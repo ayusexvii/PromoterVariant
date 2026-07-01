@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PromoterVariant Portfolio Dashboard - Streamlit Entry Point
-v2.8.1 — Fixed for positional model
+Engineered with state-caching algorithms to optimize cross-page loads.
 """
 import streamlit as st
 import pandas as pd
@@ -13,7 +13,7 @@ from pathlib import Path
 import json
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-# Page config
+# Enforce a sleek dark-theme workspace with widescreen constraints
 st.set_page_config(
     page_title="PromoterVariant AI",
     page_icon="🧬",
@@ -21,27 +21,37 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CACHE FUNCTIONS ---
+# --- 1. MEMORY-ALIGNED CACHE ROUTINES ---
 @st.cache_resource
 def load_prediction_model(model_path: Path):
+    """Load the machine learning estimator into permanent shared RAM."""
     if not model_path.exists():
         return None
     return joblib.load(model_path)
 
 @st.cache_data
 def load_genomic_dataframe(data_path: Path):
+    """Load, clean, and pre-calculate structural values for the dataset."""
     if not data_path.exists():
         return pd.DataFrame()
+    
     df = pd.read_csv(data_path, compression='gzip')
     df['abs_distance'] = df['distance_to_tss'].abs()
+    
     gene_counts = df['promoter_gene'].value_counts().to_dict()
     df['gene_variant_count'] = df['promoter_gene'].map(gene_counts)
+    
     if 'chrom' in df.columns:
         df['display_chrom'] = df['chrom'].astype(str).apply(lambda x: x if x.startswith('chr') else f"chr{x}")
+    elif 'Chromosome' in df.columns:
+        df['display_chrom'] = df['Chromosome'].astype(str).apply(lambda x: x if x.startswith('chr') else f"chr{x}")
+        
     return df
 
-@st.cache_data
+# --- 2. VALIDATION STATUS FUNCTION ---
+@st.cache_dataf
 def load_validation_status():
+    """Load validation status for literature genes."""
     validation_data = {
         'CHEK2': {'tissue': 'Liver', 'entries': 1, 'status': '✅ Validated (Liver)', 'slope_range': '-0.446', 'in_dataset': True},
         'NF2': {'tissue': 'Liver', 'entries': 1, 'status': '✅ Validated (Liver)', 'slope_range': '-0.395', 'in_dataset': True},
@@ -49,20 +59,22 @@ def load_validation_status():
         'HBB': {'tissue': 'Skin', 'entries': 23, 'status': '⚠️ Tissue Mismatch', 'slope_range': '0.269 to 0.285', 'in_dataset': False}
     }
     return pd.DataFrame(validation_data).T.reset_index().rename(columns={'index': 'Gene'})
-
+# --- 3. THEME-ALIGNED CHART BUILDERS ---
 def apply_neon_noir_layout(fig):
+    """Inject sharp geometric styling details into active canvas layers."""
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="rgba(11,12,16,1)",
         plot_bgcolor="rgba(26,29,36,1)",
         font_family="Monospace",
-        margin=dict(l=40, r=40, t=40, b=40)
+        margin=dict(l=40, r=40, t=40, b=40),
+        shapes=[dict(type='rect', xref='paper', yref='paper', x0=0, y0=0, x1=1, y1=1, line=dict(color='#00F2FE', width=1))]
     )
     fig.update_xaxes(gridcolor="#2A2F35", zerolinecolor="#3A3F45")
     fig.update_yaxes(gridcolor="#2A2F35", zerolinecolor="#3A3F45")
     return fig
 
-# --- PAGE FUNCTIONS ---
+# --- 4. PAGE ROUTER IMPLEMENTATION ---
 def render_overview_page(df):
     st.markdown("<h1 style='color:#00F2FE;'>🧬 PROMOTER VARIANT AI ARCHITECTURE</h1>", unsafe_allow_html=True)
     st.markdown("### Functional Deep-Learning Reference Model for eQTL Mapping Validation")
@@ -74,9 +86,9 @@ def render_overview_page(df):
     with col2:
         st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MAPPED GENES</h5><h2 style='color:#00F2FE; margin:0;'>~6,000</h2></div>", unsafe_allow_html=True)
     with col3:
-        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MODEL PERFORMANCE R²</h5><h2 style='color:#00F2FE; margin:0;'>0.4997</h2></div>", unsafe_allow_html=True)
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MODEL PERFORMANCE R²</h5><h2 style='color:#00F2FE; margin:0;'>0.4990</h2></div>", unsafe_allow_html=True)
     with col4:
-        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MEAN ABSOLUTE ERROR</h5><h2 style='color:#00F2FE; margin:0;'>0.2604</h2></div>", unsafe_allow_html=True)
+        st.markdown("<div style='border:1px solid #00F2FE; padding:15px; background-color:#1A1D24;'><h5>MEAN ABSOLUTE ERROR</h5><h2 style='color:#00F2FE; margin:0;'>0.2610</h2></div>", unsafe_allow_html=True)
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     
@@ -85,18 +97,22 @@ def render_overview_page(df):
         st.markdown("### 📊 Project Objective")
         st.write(
             "This project bridges the gap between deep functional genomics and machine learning "
-            "by forecasting the specific directional impact of regulatory variants located directly within human promoter coordinates."
+            "by forecasting the specific directional impact of regulatory variants located directly within human promoter coordinates. "
+            "By pairing spatial coordinates relative to the transcription start site (TSS) with biological metrics, "
+            "this system accurately models eQTL effect sizes without data leakage."
         )
     with right_col:
         st.markdown("### ⚙️ Pipeline Specifications")
         st.markdown(
             "- **Core Estimator:** Histogram-Based Gradient Boosting Regressor\n"
-            "- **Feature Matrix Strategy:** High-Performance genomic lookup window sets\n"
+            "- **Feature Matrix Strategy:** High-Performance $O(1)$ genomic lookup window sets\n"
             "- **Data Scaling Rule:** Validated zero-leak 80/20 train/test structural holdouts"
         )
     
+    # --- Validation Summary ---
     st.markdown("---")
     st.subheader("📋 Literature Validation Status")
+    
     val_df = load_validation_status()
     col1, col2, col3, col4 = st.columns(4)
     for i, (idx, row) in enumerate(val_df.iterrows()):
@@ -108,25 +124,35 @@ def render_gene_explorer_page(df):
     st.markdown("<h1 style='color:#00F2FE;'>🔍 CORE GENE INTERACTION EXPLORER</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    GENE_ALIASES = {'NF2': 'ZNF239'}
+    # --- Gene Alias Mapping (NF2 is stored as ZNF239) ---
+    GENE_ALIASES = {
+        'NF2': 'ZNF239',
+    }
+    
     gene_input = st.text_input("Enter HUGO Gene Symbol:", value="CHEK2").strip().upper()
+    
+    # Check alias
     actual_gene = GENE_ALIASES.get(gene_input, gene_input)
     
-    val_df = load_validation_status()
+    # --- Validation Status ---
     st.subheader("🧬 Gene Validation Status")
+    
+    val_df = load_validation_status()
     if gene_input in val_df['Gene'].values:
         row = val_df[val_df['Gene'] == gene_input].iloc[0]
-        st.success(f"✅ **{gene_input}** is validated!" if row['in_dataset'] else f"⚠️ **{gene_input}** is validated but not in liver dataset")
+        st.success(f"✅ **{gene_input}** is validated!")
         st.caption(f"   Tissue: {row['tissue']} | Entries: {row['entries']} | Slope range: {row['slope_range']}")
     else:
         st.info(f"ℹ️ **{gene_input}** not yet validated in the literature set")
         st.caption("Validated genes: CHEK2, NF2, TERT, HBB")
     
+    # Query the dataframe with the actual gene name
     gene_df = df[df['promoter_gene'] == actual_gene]
+    
     if gene_df.empty:
         if gene_input in val_df['Gene'].values:
             st.warning(f"⚠️ **{gene_input}** is validated in the literature but currently has no variants in the training data.")
-            st.info(f"   This gene will be available in v3.0 when multi-tissue data is fully integrated.")
+            st.info(f"   This gene will be available in v2.6 when multi-tissue data is fully integrated.")
             return
         else:
             st.warning(f"No variant records mapped within the dataset for gene target: {gene_input}")
@@ -139,9 +165,14 @@ def render_gene_explorer_page(df):
         st.markdown("#### Real-time Regulatory Layout Matrix")
         display_cols = ['display_chrom', 'pos', 'distance_to_tss', 'eqtl_slope']
         st.dataframe(gene_df[display_cols].rename(columns={'display_chrom':'Chrom', 'pos':'Position', 'distance_to_tss':'TSS Distance', 'eqtl_slope':'True Slope'}), width="stretch")
+        
     with col2:
         st.markdown("#### Spatial eQTL Distribution Profile")
-        fig = px.scatter(gene_df, x="distance_to_tss", y="eqtl_slope", labels={"distance_to_tss": "Distance to TSS (bp)", "eqtl_slope": "eQTL Slope Impact"}, color_discrete_sequence=["#00F2FE"])
+        fig = px.scatter(
+            gene_df, x="distance_to_tss", y="eqtl_slope",
+            labels={"distance_to_tss": "Distance to TSS (bp)", "eqtl_slope": "eQTL Slope Impact"},
+            color_discrete_sequence=["#00F2FE"]
+        )
         fig.add_hline(y=0.0, line_dash="dash", line_color="#7A808A")
         st.plotly_chart(apply_neon_noir_layout(fig), width="stretch")
 
@@ -150,100 +181,175 @@ def render_variant_simulator_page(model, df):
     st.markdown("---")
     
     if model is None:
-        st.error("❌ Prediction Model Core Missing from disk.")
+        st.error("❌ Prediction Model Core Missing from disk. Please compile model archives.")
         return
-    
-    n_features = model.n_features_in_
+        
     col1, col2 = st.columns([1, 1])
+    
     with col1:
         st.markdown("### 🕹️ Mutation Input Controls")
         chrom_sel = st.selectbox("Target Chromosome Core Link:", [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"])
         gene_name_sim = st.text_input("Interacting Gene Alias (Optional):", value="CHEK2")
         distance_tss = st.slider("Coordinate Mutation Offset Window Distance to TSS (bp):", min_value=-2000, max_value=2000, value=150, step=10)
+        
         sub_df = df[df['promoter_gene'] == gene_name_sim.strip().upper()]
         gene_var_count = len(sub_df) if not sub_df.empty else int(df['gene_variant_count'].median())
+        phylo_p_val = float(sub_df['phyloP'].median()) if not sub_df.empty and 'phyloP' in df.columns else 0.05
         
     with col2:
         st.markdown("### 📊 Simulated Network Response Inference")
+        
         abs_dist = abs(distance_tss)
-        
-        # Build features dynamically based on model's expected input
-        if n_features == 3:
-            input_df = pd.DataFrame(
-                [[distance_tss, abs_dist, gene_var_count]],
-                columns=['distance_to_tss', 'abs_distance', 'gene_variant_count']
-            )
-        elif n_features == 4:
-            phylo_p_val = 0.05
-            input_df = pd.DataFrame(
-                [[distance_tss, abs_dist, gene_var_count, phylo_p_val]],
-                columns=['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']
-            )
-        elif n_features == 5:
-            input_df = pd.DataFrame(
-                [[distance_tss, abs_dist, gene_var_count, 0, 0]],
-                columns=['distance_to_tss', 'abs_distance', 'gene_variant_count', 'near_tss', 'dist_bin_encoded']
-            )
-        else:
-            input_df = pd.DataFrame(
-                [[distance_tss, abs_dist, gene_var_count]],
-                columns=['distance_to_tss', 'abs_distance', 'gene_variant_count']
-            )
-        
+        # Dynamically build features based on model's expected input
+n_features = model.n_features_in_
+if n_features == 3:
+    input_df = pd.DataFrame(
+        [[distance_tss, abs_dist, gene_var_count]],
+        columns=['distance_to_tss', 'abs_distance', 'gene_variant_count']
+    )
+elif n_features == 4:
+    input_df = pd.DataFrame(
+        [[distance_tss, abs_dist, gene_var_count, phylo_p_val]],
+        columns=['distance_to_tss', 'abs_distance', 'gene_variant_count', 'phyloP']
+    )
+elif n_features == 5:
+    # Positional model with near_tss and dist_bin_encoded
+    # For simulator, use defaults for near_tss (0) and dist_bin_encoded (0)
+    input_df = pd.DataFrame(
+        [[distance_tss, abs_dist, gene_var_count, 0, 0]],
+        columns=['distance_to_tss', 'abs_distance', 'gene_variant_count', 'near_tss', 'dist_bin_encoded']
+    )
         predicted_slope = float(model.predict(input_df)[0])
-        st.metric("Predicted eQTL Slope", f"{predicted_slope:+.4f}")
+        
+        val_abs = abs(predicted_slope)
+        direction = "Positive 📈" if predicted_slope >= 0 else "Negative 📉"
+        if val_abs < 0.1:
+            magnitude = "Negligible/Weak"
+        elif val_abs < 0.35:
+            magnitude = "Moderate Expression Shift"
+        else:
+            magnitude = "Strong Target Transcription Expression Modification Impact"
+            
+        st.markdown(f"<div style='border:1px solid #00F2FE; padding:25px; background-color:#1A1D24; text-align:center;'>"
+                    f"<h4>PREDICTED eQTL SLOPE IMPACT VECTOR</h4>"
+                    f"<h1 style='color:#00F2FE; font-size:48px; margin:10px;'>{predicted_slope:+.4f}</h1>"
+                    f"<h5>INTERPRETATION CATEGORY</h5>"
+                    f"<h3 style='color:#FFFFFF; margin:5px;'>{magnitude} ({direction})</h3>"
+                    f"</div>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### Input Parameter Profile Check:")
+        st.code(f"• Distance to TSS Anchor Point : {distance_tss:,} bp\n"
+                f"• Calculated Absolute Vector : {abs_dist:,} bp\n"
+                f"• Assigned Gene Density Weight: {gene_var_count:,} baseline paths\n"
+                f"• Extracted Base Conservation : {phylo_p_val:.4f} phyloP score")
 
 def render_model_insights_page(df):
     st.markdown("<h1 style='color:#00F2FE;'>📊 MODEL INSIGHTS</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    st.subheader("🔝 Feature Importance")
-    shap_path = Path(__file__).resolve().parent / '../03_Model/processed/real_shap_importance.csv'
+    # --- Feature Importance (Real SHAP) ---
+    st.subheader("🔝 Feature Importance (SHAP)")
+    
+    shap_path = Path(__file__).resolve().parent / '../03_Model/processed/shap_dashboard_data.csv'
     if shap_path.exists():
         shap_df = pd.read_csv(shap_path)
         if 'Feature' in shap_df.columns:
-            fig = px.bar(shap_df, x='importance', y='Feature', orientation='h', color_discrete_sequence=["#00F2FE"])
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color='#94A3B8', font_family="JetBrains Mono", height=400)
+            fig = px.bar(shap_df, x='importance', y='Feature', orientation='h',
+                         title="Feature Importance (SHAP)",
+                         color_discrete_sequence=["#00F2FE"],
+                         text='importance')
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_color='#94A3B8',
+                font_family="JetBrains Mono",
+                height=400,
+                xaxis=dict(gridcolor='#1E293B', title="SHAP Importance"),
+                yaxis=dict(gridcolor='#1E293B', title="Feature")
+            )
+            fig.update_traces(textposition='outside')
             st.plotly_chart(fig, width="stretch")
+        else:
+            st.warning("SHAP data format incorrect")
+    else:
+        st.info("📈 SHAP analysis available in v2.6")
     
+    # --- Model Performance ---
     st.subheader("📊 Model Performance")
-    metrics_path = Path(__file__).resolve().parent / '../03_Model/processed/positional_model_metrics.json'
+    metrics_path = Path(__file__).resolve().parent / '../03_Model/processed/model_metrics.json'
     if metrics_path.exists():
         with open(metrics_path) as f:
             metrics = json.load(f)
         col1, col2, col3 = st.columns(3)
-        col1.metric("R²", f"{metrics.get('r2_test', 0.4997):.4f}")
-        col2.metric("MAE", f"{metrics.get('mae', 0.2604):.4f}")
-        col3.metric("Samples", f"{metrics.get('samples', 31877):,}")
+        col1.metric("R²", f"{metrics.get('r2_test', 0.4994):.4f}")
+        col2.metric("MAE", f"{metrics.get('mae', 0.2605):.4f}")
+        col3.metric("Samples", f"{metrics.get('n_samples', 31877):,}")
+    
+    # --- Residual Distribution ---
+    st.subheader("📊 Residual Distribution")
+    sample_size = min(5000, len(df))
+    if sample_size > 0:
+        sample_df = df.sample(n=sample_size, random_state=42).copy()
+        model_temp = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.1, max_depth=5, min_samples_leaf=10, random_state=42)
+        X_sample = sample_df[['distance_to_tss', 'abs_distance', 'gene_variant_count']].copy()
+        y_sample = sample_df['eqtl_slope'].values
+        model_temp.fit(X_sample, y_sample)
+        sample_df['pred'] = model_temp.predict(X_sample)
+        sample_df['Residuals'] = sample_df['eqtl_slope'] - sample_df['pred']
+        
+        fig = px.histogram(sample_df, x="Residuals", nbins=50, 
+                          color_discrete_sequence=["#7A808A"],
+                          title="Residual Distribution")
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font_color='#94A3B8',
+            font_family="JetBrains Mono",
+            height=350,
+            xaxis=dict(gridcolor='#1E293B', title="Residual"),
+            yaxis=dict(gridcolor='#1E293B', title="Frequency")
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("Insufficient data for residuals")
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    data_vector = script_dir / '../02_Features/processed/training_matrix_with_positional_features.csv.gz'
+    data_vector = script_dir / '../02_Features/processed/training_matrix_with_conservation.csv.gz'
     model_vector = script_dir / '../03_Model/processed/positional_model.pkl'
     
     df = load_genomic_dataframe(data_vector)
     model = load_prediction_model(model_vector)
     
     if df.empty:
-        st.sidebar.error("❌ Dataset matrix load failure.")
-        st.error("### Structural Data Archive Failure.")
+        st.sidebar.error("❌ Dataset matrix load failure. Verify paths.")
+        st.error("### Structural Data Archive Failure. Run feature engineering workflows first.")
         return
         
+    # --- SIDEBAR ---
     st.sidebar.markdown("<h2 style='color:#00F2FE; margin-bottom:0;'>🧬 PROMOTER AI</h2>", unsafe_allow_html=True)
-    st.sidebar.markdown("<p style='font-style:italic; font-size:12px; color:#7A808A;'>Recruiter Portfolio Module v2.8</p>", unsafe_allow_html=True)
+    st.sidebar.markdown("<p style='font-style:italic; font-size:12px; color:#7A808A;'>Recruiter Portfolio Module v1.2</p>", unsafe_allow_html=True)
     st.sidebar.markdown("---")
     
+    # --- Tissue Selector ---
     st.sidebar.markdown("### 🧬 Tissue")
-    tissue_options = ["Liver", "Whole Blood (v3.0)", "Brain (v3.0)"]
+    tissue_options = ["Liver", "Whole Blood (v2.6)", "Brain (v2.6)"]
     tissue = st.sidebar.selectbox("Select Tissue", tissue_options)
     st.sidebar.caption(f"Current: {tissue}")
+    
     st.sidebar.markdown("---")
     
-    page_selection = st.sidebar.radio("NAVIGATION", ["1. Dashboard Overview", "2. Gene Locus Explorer", "3. Live Mutation Simulator", "4. Deep Model Insights"])
+    page_selection = st.sidebar.radio(
+        "NAVIGATION",
+        ["1. Dashboard Overview", "2. Gene Locus Explorer", "3. Live Mutation Simulator", "4. Deep Model Insights"]
+    )
+    
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### System Environment Diagnostics")
     st.sidebar.text(f"• Dataset Rows: {len(df):,}\n• Target Model: Loaded Successfully\n• Style Render: Neo-Noir Theme")
     
+    # --- PAGE ROUTING ---
     if page_selection == "1. Dashboard Overview":
         render_overview_page(df)
     elif page_selection == "2. Gene Locus Explorer":

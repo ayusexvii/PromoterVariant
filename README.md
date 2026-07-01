@@ -50,3 +50,13 @@ All 4 literature variants are validated. Search CHEK2, NF2, TERT, or HBB in the 
 ---
 
 ## 🔬 Architecture
+
+## Model Performance
+
+| Model | R² | MAE | Samples |
+|-------|-----|-----|---------|
+| Liver-only | 0.4997 | 0.2604 | 31,877 |
+| Multi-tissue | 0.0906 | 0.3431 | 5,925,892 |
+
+**The Liver-only model is the primary predictor.** Multi-tissue expansion was attempted but did not improve performance due to tissue-specific regulatory mechanisms.
+

@@ -302,7 +302,7 @@ def render_model_insights_page(df):
 def main():
     script_dir = Path(__file__).resolve().parent
     data_vector = script_dir / '../02_Features/processed/training_matrix_with_conservation.csv.gz'
-    model_vector = script_dir / '../03_Model/processed/conservation_model.pkl'
+    model_vector = script_dir / '../03_Model/processed/positional_model.pkl'
     
     df = load_genomic_dataframe(data_vector)
     model = load_prediction_model(model_vector)

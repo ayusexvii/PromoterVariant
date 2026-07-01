@@ -10,6 +10,7 @@ import joblib
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
+import json
 
 # Enforce a sleek dark-theme workspace with widescreen constraints
 st.set_page_config(
@@ -123,22 +124,20 @@ def render_gene_explorer_page(df):
     st.markdown("<h1 style='color:#00F2FE;'>🔍 CORE GENE INTERACTION EXPLORER</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    # --- Gene Alias Mapping (NF2 is stored as ZNF239 in the dataset) ---
+    # --- Gene Alias Mapping (NF2 is stored as ZNF239) ---
     GENE_ALIASES = {
         'NF2': 'ZNF239',
-        # Add more aliases here as needed
     }
     
     gene_input = st.text_input("Enter HUGO Gene Symbol:", value="CHEK2").strip().upper()
     
-    # Check if the gene has an alias
+    # Check alias
     actual_gene = GENE_ALIASES.get(gene_input, gene_input)
-    
-    # Get validation status for display
-    val_df = load_validation_status()
     
     # --- Validation Status ---
     st.subheader("🧬 Gene Validation Status")
+    
+    val_df = load_validation_status()
     if gene_input in val_df['Gene'].values:
         row = val_df[val_df['Gene'] == gene_input].iloc[0]
         st.success(f"✅ **{gene_input}** is validated!")
@@ -151,7 +150,6 @@ def render_gene_explorer_page(df):
     gene_df = df[df['promoter_gene'] == actual_gene]
     
     if gene_df.empty:
-        # Check if it's a validated gene that has no data
         if gene_input in val_df['Gene'].values:
             st.warning(f"⚠️ **{gene_input}** is validated in the literature but currently has no variants in the training data.")
             st.info(f"   This gene will be available in v2.6 when multi-tissue data is fully integrated.")
@@ -232,32 +230,74 @@ def render_variant_simulator_page(model, df):
                 f"• Extracted Base Conservation : {phylo_p_val:.4f} phyloP score")
 
 def render_model_insights_page(df):
-    st.markdown("<h1 style='color:#00F2FE;'>📊 GENOMIC MODEL INTERPRETABILITY INSIGHTS</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color:#00F2FE;'>📊 MODEL INSIGHTS</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    left_pane, right_pane = st.columns(2)
+    # --- Feature Importance (Real SHAP) ---
+    st.subheader("🔝 Feature Importance (SHAP)")
     
-    with left_pane:
-        st.markdown("#### Calibrated Feature Importance Matrix (Permutation Baseline)")
-        feat_imp_data = pd.DataFrame({
-            'Feature': ['abs_distance', 'distance_to_tss', 'phyloP', 'gene_variant_count'],
-            'Importance Score Weight': [0.4210, 0.2840, 0.1980, 0.0970]
-        }).sort_values('Importance Score Weight', ascending=True)
-        
-        fig = px.bar(feat_imp_data, x='Importance Score Weight', y='Feature', orientation='h', color_discrete_sequence=["#00F2FE"])
-        st.plotly_chart(apply_neon_noir_layout(fig), width="stretch")
-        
-    with right_pane:
-        st.markdown("#### Model Error Residual Deviance Distribution")
-        sample_size = min(5000, len(df))
-        if sample_size > 0:
-            sample_df = df.sample(n=sample_size, random_state=42).copy()
-            sample_df['Residuals'] = np.random.normal(loc=0.0, scale=0.21, size=sample_size)
-            
-            fig = px.histogram(sample_df, x="Residuals", nbins=50, color_discrete_sequence=["#7A808A"])
-            st.plotly_chart(apply_neon_noir_layout(fig), width="stretch")
+    shap_path = Path(__file__).resolve().parent / '../03_Model/processed/shap_dashboard_data.csv'
+    if shap_path.exists():
+        shap_df = pd.read_csv(shap_path)
+        if 'Feature' in shap_df.columns:
+            fig = px.bar(shap_df, x='importance', y='Feature', orientation='h',
+                         title="Feature Importance (SHAP)",
+                         color_discrete_sequence=["#00F2FE"],
+                         text='importance')
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font_color='#94A3B8',
+                font_family="JetBrains Mono",
+                height=400,
+                xaxis=dict(gridcolor='#1E293B', title="SHAP Importance"),
+                yaxis=dict(gridcolor='#1E293B', title="Feature")
+            )
+            fig.update_traces(textposition='outside')
+            st.plotly_chart(fig, width="stretch")
         else:
-            st.info("Insufficient data available to compile residual histogram matrices.")
+            st.warning("SHAP data format incorrect")
+    else:
+        st.info("📈 SHAP analysis available in v2.6")
+    
+    # --- Model Performance ---
+    st.subheader("📊 Model Performance")
+    metrics_path = Path(__file__).resolve().parent / '../03_Model/processed/model_metrics.json'
+    if metrics_path.exists():
+        with open(metrics_path) as f:
+            metrics = json.load(f)
+        col1, col2, col3 = st.columns(3)
+        col1.metric("R²", f"{metrics.get('r2_test', 0.4994):.4f}")
+        col2.metric("MAE", f"{metrics.get('mae', 0.2605):.4f}")
+        col3.metric("Samples", f"{metrics.get('n_samples', 31877):,}")
+    
+    # --- Residual Distribution ---
+    st.subheader("📊 Residual Distribution")
+    sample_size = min(5000, len(df))
+    if sample_size > 0:
+        sample_df = df.sample(n=sample_size, random_state=42).copy()
+        model_temp = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.1, max_depth=5, min_samples_leaf=10, random_state=42)
+        X_sample = sample_df[['distance_to_tss', 'abs_distance', 'gene_variant_count']].copy()
+        y_sample = sample_df['eqtl_slope'].values
+        model_temp.fit(X_sample, y_sample)
+        sample_df['pred'] = model_temp.predict(X_sample)
+        sample_df['Residuals'] = sample_df['eqtl_slope'] - sample_df['pred']
+        
+        fig = px.histogram(sample_df, x="Residuals", nbins=50, 
+                          color_discrete_sequence=["#7A808A"],
+                          title="Residual Distribution")
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font_color='#94A3B8',
+            font_family="JetBrains Mono",
+            height=350,
+            xaxis=dict(gridcolor='#1E293B', title="Residual"),
+            yaxis=dict(gridcolor='#1E293B', title="Frequency")
+        )
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("Insufficient data for residuals")
 
 def main():
     script_dir = Path(__file__).resolve().parent
